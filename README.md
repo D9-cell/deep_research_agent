@@ -1,160 +1,200 @@
 # AlgoMentor
 
-AI-powered algorithm tutor built in three progressive phases.
+Production-grade AI algorithm tutor powered by a multi-agent pipeline built on Mistral AI.  
+Delivers structured, incremental analysis of LeetCode problems via CLI and Telegram.
 
-## Quick Start
+---
+
+## Overview
+
+AlgoMentor orchestrates five specialised subagents to research any competitive-programming problem end-to-end:
+
+1. **Problem Acquisition** — scrapes LeetCode / falls back to Tavily web search
+2. **Similarity Discovery** — surfaces structurally similar problems
+3. **Pattern Classification** — identifies BFS, DP, two-pointer, graph, etc.
+4. **Solution Mining** — extracts and ranks known approaches with complexity
+5. **Strategy Optimisation** — selects the best strategy, refines pseudocode
+
+A root LLM then synthesises all agent outputs into a structured response.  
+Persistent memory (Phase 3) personalises future sessions based on past performance.
+
+---
+
+## Features
+
+| Feature | Detail |
+|---|---|
+| Progressive streaming | Six stage banners emitted before final content arrives |
+| Structured sections | Problem / Intuition / Pseudocode / Complexity / Similar Problems / Pattern / Learning Context |
+| Human-in-the-loop | Code generation requires explicit user approval |
+| Multi-language codegen | Python / Java / C++ / Go / TypeScript |
+| Telegram UX | Progress placeholder edited in-place; sections sent individually |
+| Structured JSON logs | Every stage logged with request_id, duration_ms, user_id |
+| Request correlation | UUID v4 propagated through every log record |
+| Persistent memory | Per-user problem history, weak/strong pattern tracking |
+| Phase auto-detection | Capabilities activate based on installed modules |
+
+---
+
+## Environment Setup
 
 ```bash
-# from the workspace root
-cd algomentor
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+Create `.env` at the project root:
+
+```env
+MISTRAL_API_KEY=sk-...
+TAVILY_API_KEY=tvly-...
+TELEGRAM_BOT_TOKEN=<optional, only needed for Telegram mode>
+```
+
+---
+
+## CLI Usage
+
+```bash
+# Interactive mode
+python main.py
+
+# With initial problem (non-interactive first turn)
 python main.py "Number of Islands"
 ```
 
-Or interactively:
+**In-session commands:**
+
+| Input | Effect |
+|---|---|
+| `<problem name>` | Research the problem |
+| `yes` / `no` | Approve or skip code generation |
+| `python` / `java` / `cpp` / `go` / `typescript` | Select solution language |
+| `/reset` | Reset session state |
+| `quit` / `exit` / `q` | Exit |
+| `help` | Show command list |
+
+**Terminal output example:**
+
+```
+  📥  Fetching problem…
+  🔍  Finding similar problems…
+  🧩  Analyzing patterns…
+  ⛏   Mining solutions…
+  🏆  Optimizing strategy…
+  🔗  Synthesizing response…
+
+  ▌ PROBLEM
+  Given an m x n grid of '1's (land) and '0's (water)…
+
+  ▌ INTUITION
+  Use BFS from each unvisited land cell…
+
+  ▌ PSEUDOCODE
+  function numIslands(grid):
+    …
+
+  ▌ COMPLEXITY
+  Time O(m x n) | Space O(m x n)
+```
+
+---
+
+## Telegram Usage
+
+1. Set `TELEGRAM_BOT_TOKEN` in `.env`.
+2. Start the bot: `python main.py telegram`
+3. Open your bot in Telegram, send `/start`.
+4. Send any LeetCode problem name.
+
+The bot sends an editable progress message immediately (within 1 second) and  
+updates it in-place as each pipeline stage completes. Each output section arrives  
+as a separate message so large responses never hit Telegram's 4 096-character limit.
+
+---
+
+## Architecture Summary
+
+```
+CLI / Telegram
+     |
+     v
+AgentService ---- generates request_id (UUID v4)
+     |             emits AgentEvent stream
+     |
+     +-- research_problem()
+     |       |
+     |       +-- ProblemAcquisitionAgent
+     |       +-- SimilarityAgent
+     |       +-- PatternAgent
+     |       +-- SolutionMiningAgent
+     |       +-- StrategyOptimizationAgent
+     |       +-- Root LLM synthesis
+     |
+     +-- generate_code()   (after human gate)
+```
+
+See [architecture.md](architecture.md) for the full layered breakdown with event flow and scaling strategy.
+
+---
+
+## Logging
+
+Two rotating log files are written to the project root:
+
+| File | Level | Rotation |
+|---|---|---|
+| `algomentor.log` | DEBUG+ | 10 MB x 5 backups |
+| `algomentor-error.log` | ERROR+ | 5 MB x 3 backups |
+
+Every record is a single-line JSON object:
+
+```json
+{
+  "timestamp": "2026-02-20T14:10:00.123456+00:00",
+  "level": "INFO",
+  "logger": "algomentor.core.agent_service",
+  "request_id": "a1b2c3d4-e5f6-...",
+  "user_id": "123456789",
+  "agent": "AgentService",
+  "stage": "research",
+  "duration_ms": 42310,
+  "message": "Research complete"
+}
+```
+
+Useful `jq` queries:
+
 ```bash
-python main.py
-AlgoMentor > Two Sum
-AlgoMentor > quit
+# All records for one request
+cat algomentor.log | jq -r 'select(.request_id == "<uuid>")'
+
+# All errors
+cat algomentor-error.log | jq .
+
+# Stage durations
+cat algomentor.log | jq 'select(.duration_ms != null) | {stage, duration_ms}'
 ```
 
-## Prerequisites
-
-Add to `.env` (workspace root):
-```
-MISTRAL_API_KEY=sk-...
-TAVILY_API_KEY=tvly-...
-```
-
-## Architecture
-
-```
-Phase 1  ──  Single Agent  ──  LeetCode scraper + Tavily fallback
-Phase 2  ──  7 Agents      ──  + similarity, pattern, solution, strategy subagents
-Phase 3  ──  7 Agents      ──  + persistent memory / personalization
-```
-
-### Phase 1 — Core Reasoning Loop
-
-| Component | File |
-|---|---|
-| CLI | `main.py` |
-| Root Agent | `agent/deep_agent.py` |
-| Prompts | `agent/prompts.py` |
-| Tavily search | `tools/internet_search.py` |
-| LeetCode scraper | `tools/leetcode_scraper.py` |
-| Config | `config/settings.py` |
-
-**Flow:**
-```
-User types problem → LeetCode scraper fetches statement
-→ Agent explains + writes pseudocode
-→ Human gate: "Generate code? Which language?"
-→ Code produced
-```
-
-### Phase 2 — Multi-Agent Orchestration
-
-New files added on top of Phase 1:
-
-| Component | File |
-|---|---|
-| 5 Subagents | `agent/subagents.py` |
-| Similarity tool | `tools/similarity.py` |
-| Content extractor | `tools/content_extractor.py` |
-| Pattern classifier | `skills/pattern_classifier.py` |
-| Complexity analyser | `skills/complexity.py` |
-| Example simulator | `skills/simulator.py` |
-| Strategy ranker | `skills/ranking.py` |
-
-**Agent graph:**
-```
-Root
- ├─ ProblemAcquisitionAgent   → fetches statement
- ├─ SimilarityAgent           → finds similar problems
- ├─ PatternAgent              → classifies BFS/DFS/DP/…
- ├─ SolutionMiningAgent       → mines approaches from web
- └─ StrategyOptimizationAgent → ranks + refines best strategy
-```
-
-All 5 subagents fire sequentially; Root synthesises the results.
-
-### Phase 3 — Persistent Memory
-
-New files added on top of Phase 2:
-
-| Component | File |
-|---|---|
-| Memory schema | `memory/schema.py` |
-| Memory store | `memory/store.py` |
-| Memory tool | `tools/memory_store_tool.py` |
-
-Memory persisted at: `memory/memory.json`
-
-**What is remembered:**
-- Problems solved + language used
-- Pattern-level success/failure history
-- Preferred language (auto-detected from usage)
-- Recent topics
-- Weak / strong patterns (for personalised nudges)
-
-## File Tree
-
-```
-algomentor/
-├── main.py
-├── agent/
-│   ├── deep_agent.py        # Root agent (all phases)
-│   ├── prompts.py           # All system prompts
-│   └── subagents.py         # Phase 2 subagents
-├── tools/
-│   ├── internet_search.py   # Tavily wrapper
-│   ├── leetcode_scraper.py  # LeetCode GraphQL
-│   ├── similarity.py        # Structural similarity scoring
-│   ├── content_extractor.py # HTML → plain text fetcher
-│   └── memory_store_tool.py # Phase 3 memory query tool
-├── skills/
-│   ├── pattern_classifier.py
-│   ├── complexity.py
-│   ├── simulator.py
-│   └── ranking.py
-├── memory/
-│   ├── schema.py
-│   └── store.py
-└── config/
-    └── settings.py
-```
+---
 
 ## Phase Activation
 
-Phases activate automatically based on which modules are present:
+| Phase | Activates when | Adds |
+|---|---|---|
+| 1 | Always | LeetCode scraper, single-agent loop |
+| 2 | `agent/subagents.py` importable | 5 specialised subagents |
+| 3 | `memory/store.py` importable | Persistent memory, personalisation |
 
-| Phase | Activates when… |
-|---|---|
-| Phase 1 | Always (core files present) |
-| Phase 2 | `agent/subagents.py` importable |
-| Phase 3 | `memory/store.py` importable |
+Startup banner: `[Phase 1 ✅  |  Phase 2 ✅  |  Phase 3 ✅]`
 
-The startup banner shows: `[Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅]`
+---
 
-## Tests
+## Roadmap
 
-**Test 1 — Number of Islands**
-```
-AlgoMentor > Number of Islands
-# Expect: problem statement, intuition, BFS/DFS pseudocode
-# Prompt: "Generate code? (yes/no)"
-# Reply:  yes  →  Python solution produced
-```
-
-**Test 2 — DP problem**
-```
-AlgoMentor > Coin Change
-# Expect: DP pattern detected, pseudocode, bottom-up approach ranked first
-```
-
-**Test 3 — Memory (Phase 3)**
-```
-# Solve "Number of Islands" twice
-# Second run: agent mentions previous attempt in context
-# Check: memory/memory.json updated with both sessions
-```
+- [ ] Async parallel subagent execution (ThreadPoolExecutor fan-out)
+- [ ] WebSocket / SSE transport for browser front-end
+- [ ] Redis-backed session store (multi-process scaling)
+- [ ] Prometheus metrics endpoint (`/metrics`)
+- [ ] LangSmith tracing integration
+- [ ] Docker Compose deployment with log aggregation

@@ -1,10 +1,6 @@
 """
 AlgoMentor — Root Agent  (all phases)
 
-Phase 1 : single-agent reasoning loop
-Phase 2 : orchestrates 5 specialised subagents
-Phase 3 : memory-aware, personalised recommendations
-
 The RootAgent class is the only public interface; main.py only
 ever instantiates and calls this class.
 """
@@ -113,9 +109,9 @@ class RootAgent:
     Orchestrates the full AlgoMentor pipeline.
 
     Capabilities grow automatically based on which phases are installed:
-      Phase 1  — always available (LeetCode scraper + Tavily fallback)
-      Phase 2  — enabled when agent/subagents.py is present
-      Phase 3  — enabled when memory/store.py is present
+    always available (LeetCode scraper + Tavily fallback)
+    enabled when agent/subagents.py is present
+    enabled when memory/store.py is present
     """
 
     def __init__(self) -> None:
@@ -131,12 +127,6 @@ class RootAgent:
         self._memory: MemoryStore | None = None
         if self._phase3:
             self._memory = MemoryStore()
-
-        phase_flags = (
-            f"Phase 1 ✅  |  Phase 2 {'✅' if self._phase2 else '⬜'}  "
-            f"|  Phase 3 {'✅' if self._phase3 else '⬜'}"
-        )
-        print(f"  [{phase_flags}]")
 
     # ── Phase 1: research a problem ───────────────────────────────────────────
 

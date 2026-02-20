@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "profile": {
+    "solved_count": 2,
+    "preferred_language": "java , kotlin and rust",
+    "pattern_attempts": {
+      "BFS": 4
+    },
+    "pattern_successes": {
+      "BFS": 4
+    },
+    "recent_topics": [
+      "** Depth-First Search",
+      "Breadth-First Search",
+      "Graph",
+      "Union Find"
+    ],
+    "last_session": "2026-02-20T12:01:13.722872+00:00"
+  },
+  "solved_problems": [
+    {
+      "name": "\n2492. Minimum Score of a Path Between Two Cities",
+      "slug": "2492-minimum-score-of-a-path-between-two-cities",
+      "difficulty": "Unknown",
+      "tags": [],
+      "language": "java and python",
+      "solved_at": "2026-02-20T09:12:14.940831+00:00",
+      "pattern": "BFS",
+      "session_notes": ""
+    },
+    {
+      "name": "Checking Existence of Edge Length Limited Paths",
+      "slug": "checking-existence-of-edge-length-limited-paths",
+      "difficulty": "Unknown",
+      "tags": [],
+      "language": "java",
+      "solved_at": "2026-02-20T11:21:50.211013+00:00",
+      "pattern": "BFS",
+      "session_notes": ""
+    }
+  ]
+}

@@ -124,10 +124,7 @@ async def _edit_or_send(
         # Text unchanged or message too old to edit — silently skip
         return placeholder
 
-
 # ── Handler factories ─────────────────────────────────────────────────────────
-
-
 def _build_handlers(service: AgentService):
     """Return (start_handler, reset_handler, message_handler)."""
 
@@ -239,27 +236,30 @@ def _build_handlers(service: AgentService):
 
     return cmd_start, cmd_reset, on_message
 
-
 # ── Entry point ───────────────────────────────────────────────────────────────
-
-
 def run(service: AgentService) -> None:
     """
-    Build and start the Telegram bot using long-polling.
+    Build and start the Telegram bot using a webhook.
 
+    Listens on 0.0.0.0:8080 and registers the webhook URL with Telegram.
     Blocks until interrupted (Ctrl-C or SIGTERM).
+
+    Requires env vars:
+        TELEGRAM_BOT_TOKEN  — bot token issued by @BotFather.
+        PUBLIC_URL          — HTTPS base URL reachable by Telegram
+                              (e.g. https://myapp.fly.dev).
 
     Args:
         service: Shared AgentService instance already initialised by main.py.
     """
-    from config.settings import TELEGRAM_BOT_TOKEN
+    from config.settings import TELEGRAM_BOT_TOKEN, PUBLIC_URL
 
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError(
             "TELEGRAM_BOT_TOKEN is not set — add it to your .env file."
         )
 
-    log_event(_logger, "Starting Telegram bot", stage="startup")
+    log_event(_logger, "Starting Telegram bot (webhook mode)", stage="startup")
 
     cmd_start, cmd_reset, on_message = _build_handlers(service)
 
@@ -268,5 +268,13 @@ def run(service: AgentService) -> None:
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
-    log_event(_logger, "Telegram polling started", stage="startup")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    webhook_url = f"{PUBLIC_URL.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
+    log_event(_logger, f"Webhook URL: {webhook_url}", stage="startup")
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=8080,
+        url_path=TELEGRAM_BOT_TOKEN,
+        webhook_url=webhook_url,
+        allowed_updates=Update.ALL_TYPES,
+    )

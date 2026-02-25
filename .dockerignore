@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+algomentor.log
+memory/memory.json

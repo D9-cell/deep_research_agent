@@ -20,6 +20,11 @@ if not MISTRAL_API_KEY:
 if not TAVILY_API_KEY:
     raise RuntimeError("TAVILY_API_KEY is not set — add it to your .env file.")
 
+# ── Webhook ───────────────────────────────────────────────────────────────────
+PUBLIC_URL: str = os.getenv("PUBLIC_URL", "")
+if not PUBLIC_URL:
+    raise RuntimeError("PUBLIC_URL is not set — required for Telegram webhook mode.")
+
 # ── LeetCode ──────────────────────────────────────────────────────────────────
 LEETCODE_GRAPHQL_URL: str = "https://leetcode.com/graphql"
 

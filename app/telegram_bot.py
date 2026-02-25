@@ -16,6 +16,8 @@ pure I/O adapter.
 """
 from __future__ import annotations
 
+import asyncio
+
 from telegram import Message, Update
 from telegram.error import BadRequest
 from telegram.ext import (
@@ -34,14 +36,14 @@ _logger = get_logger(__name__)
 
 _TELEGRAM_MSG_LIMIT = 4096
 
-# Stage → emoji shown while the progress placeholder is being updated
-_STAGE_EMOJI: dict[str, str] = {
-    "fetch":     "📥",
-    "similar":   "🔍",
-    "patterns":  "🧩",
-    "solutions": "⛏",
-    "strategy":  "🏆",
-    "synthesis": "🔗",
+# Stage labels shown while the progress placeholder is being updated
+_STAGE_LABEL: dict[str, str] = {
+    "fetch":     "Problem Acquisition started",
+    "similar":   "Similarity search running",
+    "patterns":  "Pattern classification complete",
+    "solutions": "Strategy ranking complete",
+    "strategy":  "Synthesizing solution strategy",
+    "synthesis": "Finalizing response",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,9 +177,8 @@ def _build_handlers(service: AgentService):
         try:
             async for event in service.handle_message_stream(user_id, text):
                 if event.stage in STAGE_MESSAGES:
-                    # Progress notification
-                    emoji = _STAGE_EMOJI.get(event.stage, "⏳")
-                    status_text = f"{emoji}  {event.payload}"
+                    # Progress notification — plain text, no emoji
+                    status_text = _STAGE_LABEL.get(event.stage, event.payload)
                     progress_msg = await _edit_or_send(
                         update, progress_msg, status_text
                     )
@@ -194,11 +195,12 @@ def _build_handlers(service: AgentService):
                     section_count += 1
                     # Plain-text header — no markdown, no parse_mode
                     if event.section_title:
-                        header = f"── {event.section_title} ──\n\n"
+                        header = f"{event.section_title}\n\n"
                     else:
                         header = ""
                     body = header + event.payload
                     await _send(update, body)
+                    await asyncio.sleep(0.3)
 
                 elif event.stage == "complete":
                     # Clean up any lingering placeholder

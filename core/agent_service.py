@@ -45,6 +45,11 @@ from enum import Enum, auto
 from typing import AsyncIterator, Optional
 
 from core.events import AgentEvent, STAGE_MESSAGES
+from core.output_formatter import (
+    OutputFormatter,
+    format_similar_problem_message,
+    validate_blocks,
+)
 from log.logger import get_logger, log_event
 
 _logger = get_logger(__name__)
@@ -106,6 +111,33 @@ def _new_request_id() -> str:
 
 # ── Similarity problem entry delay ──────────────────────────────────────────
 _SIMILAR_ENTRY_DELAY_S: float = 0.4  # 400 ms between individual problem entries
+
+# ── Recovery prompt injected when synthesis is incomplete ────────────────────
+_RECOVERY_PROMPT_TEMPLATE = """\
+{problem_name}
+
+IMPORTANT: Your previous response was incomplete. Regenerate a FULL structured \
+solution with ALL of the following sections:
+
+## Problem
+## Constraints
+## Statement
+## Intuition
+## Approach
+## Why This Works
+## Pseudocode
+## Complexity
+## Similar Problems
+## Notes
+
+Rules:
+- No markdown bold or stars
+- No emojis
+- Similar Problems MUST include exactly one problem from EACH of these platforms:
+  Codeforces, CodeChef, GeeksForGeeks, HackerRank, LeetCode
+- Each Similar Problem entry MUST have: Platform, Title, URL, Why similar
+- Return FULL content for every section — no placeholders
+"""
 
 
 def _parse_similar_problems(text: str) -> list[str]:
@@ -381,28 +413,215 @@ class AgentService:
 
         session.research_output = research
 
-        # Deliver output section-by-section; Similar Problems streamed entry-by-entry
-        for title, content in _parse_sections(research):
-            if title == "Similar Problems":
-                entries = _parse_similar_problems(content)
-                if entries:
+        # ── Post-process through OutputFormatter ─────────────────────────────
+        formatter = OutputFormatter()
+        structured = formatter.process(research)
+        is_valid, missing = validate_blocks(structured)
+
+        if not is_valid:
+            # Log every missing block
+            for key in missing:
+                _logger.error(
+                    "block_missing=%s",
+                    key,
+                    extra={
+                        "user_id": user_id,
+                        "request_id": request_id,
+                        "stage": "validation",
+                        "agent": "AgentService",
+                    },
+                )
+            log_event(
+                _logger,
+                f"Incomplete synthesis — retrying ({len(missing)} missing blocks)",
+                user_id=user_id,
+                request_id=request_id,
+                agent="AgentService",
+                stage="validation",
+            )
+
+            # Emit a progress marker so the user isn't left silent
+            yield AgentEvent.progress(user_id, request_id, "synthesis")  # type: ignore[arg-type]
+
+            recovery_query = _RECOVERY_PROMPT_TEMPLATE.format(
+                problem_name=problem_name
+            )
+            try:
+                research_retry: str = await asyncio.to_thread(
+                    self._agent.research_problem, recovery_query
+                )
+            except Exception as exc:
+                _logger.error(
+                    "recovery research_problem failed: %s",
+                    exc,
+                    extra={
+                        "user_id": user_id,
+                        "request_id": request_id,
+                        "stage": "recovery",
+                        "agent": "AgentService",
+                    },
+                    exc_info=True,
+                )
+                session.state = _State.IDLE
+                yield AgentEvent.error(
+                    user_id,
+                    request_id,
+                    f"Sorry, recovery synthesis failed for '{problem_name}': {exc}",
+                )
+                return
+
+            structured = formatter.process(research_retry)
+            session.research_output = research_retry
+            is_valid_retry, missing_retry = validate_blocks(structured)
+
+            if not is_valid_retry:
+                for key in missing_retry:
+                    _logger.error(
+                        "block_missing=%s (after retry)",
+                        key,
+                        extra={
+                            "user_id": user_id,
+                            "request_id": request_id,
+                            "stage": "validation_retry",
+                            "agent": "AgentService",
+                        },
+                    )
+                log_event(
+                    _logger,
+                    "Synthesis still incomplete after retry — delivering best-effort",
+                    user_id=user_id,
+                    request_id=request_id,
+                    agent="AgentService",
+                    stage="validation_retry",
+                )
+            else:
+                log_event(
+                    _logger,
+                    "Recovery synthesis complete — all blocks present",
+                    user_id=user_id,
+                    request_id=request_id,
+                    agent="AgentService",
+                    stage="validation_retry",
+                )
+
+        # ── Staged delivery (only begins after validation guard) ──────────────
+
+        # MESSAGE 1: Problem + Constraints
+        problem_text = structured["problem"]
+        constraints_text = structured["constraints"]
+        if problem_text or constraints_text:
+            msg1_parts = []
+            if problem_text:
+                msg1_parts.append(problem_text)
+            if constraints_text:
+                msg1_parts.append("Constraints:\n" + constraints_text)
+            yield AgentEvent.section(
+                user_id, request_id, "Problem", "\n\n".join(msg1_parts)
+            )
+            log_event(
+                _logger,
+                "Section delivered",
+                user_id=user_id,
+                request_id=request_id,
+                agent="AgentService",
+                stage="problem_sent",
+            )
+            await asyncio.sleep(0.3)
+
+        # MESSAGE 2: Statement + Intuition + Approach + Why This Works
+        approach_text = structured["approach_combined"]
+        if approach_text:
+            yield AgentEvent.section(user_id, request_id, "Approach", approach_text)
+            log_event(
+                _logger,
+                "Section delivered",
+                user_id=user_id,
+                request_id=request_id,
+                agent="AgentService",
+                stage="statement_sent",
+            )
+            await asyncio.sleep(0.3)
+
+        # MESSAGE 3: Pseudocode only
+        pseudocode_text = structured["pseudocode"]
+        if pseudocode_text:
+            yield AgentEvent.section(user_id, request_id, "Pseudocode", pseudocode_text)
+            log_event(
+                _logger,
+                "Section delivered",
+                user_id=user_id,
+                request_id=request_id,
+                agent="AgentService",
+                stage="pseudocode_sent",
+            )
+            await asyncio.sleep(0.3)
+
+        # MESSAGE 4: Complexity
+        complexity_text = structured["complexity"]
+        if complexity_text:
+            yield AgentEvent.section(user_id, request_id, "Complexity", complexity_text)
+            log_event(
+                _logger,
+                "Section delivered",
+                user_id=user_id,
+                request_id=request_id,
+                agent="AgentService",
+                stage="complexity_sent",
+            )
+            await asyncio.sleep(0.3)
+
+        # MESSAGES 5+: Similar problems — one per message
+        similar_problems = structured["similar_problems"]
+        if similar_problems:
+            for i, prob in enumerate(similar_problems):
+                msg_text = format_similar_problem_message(prob)
+                yield AgentEvent.section(
+                    user_id, request_id, "Similar Problem", msg_text
+                )
+                log_event(
+                    _logger,
+                    f"Similar problem delivered: {prob.get('platform', '?')} — {prob.get('title', '?')}",
+                    user_id=user_id,
+                    request_id=request_id,
+                    agent="AgentService",
+                    stage="similar_problem_sent",
+                )
+                if i < len(similar_problems) - 1:
+                    await asyncio.sleep(_SIMILAR_ENTRY_DELAY_S)
+        else:
+            # Fallback: no structured entries found — search for raw similar block
+            for title, content in _parse_sections(research):
+                if title == "Similar Problems":
+                    entries = _parse_similar_problems(content)
                     for i, entry in enumerate(entries):
                         yield AgentEvent.section(
                             user_id, request_id, "Similar Problem", entry
                         )
+                        log_event(
+                            _logger,
+                            "Similar problem delivered (fallback)",
+                            user_id=user_id,
+                            request_id=request_id,
+                            agent="AgentService",
+                            stage="similar_problem_sent",
+                        )
                         if i < len(entries) - 1:
                             await asyncio.sleep(_SIMILAR_ENTRY_DELAY_S)
-                else:
-                    # Fallback: emit the whole block if parsing found nothing
-                    yield AgentEvent.section(user_id, request_id, title, content)
-                continue
-            yield AgentEvent.section(user_id, request_id, title, content)
+                    break
+        await asyncio.sleep(0.3)
 
+        # Notes / Optimization Insights
+        notes_text = structured["notes"]
+        if notes_text:
+            yield AgentEvent.section(user_id, request_id, "Notes", notes_text)
+            await asyncio.sleep(0.3)
+
+        # Prompt for code generation
         yield AgentEvent.section(
             user_id,
             request_id,
             "Next Step",
-            "Generate code? Reply yes or no.",
+            "Generate code? yes or no",
         )
         yield AgentEvent.complete(user_id, request_id)
 
@@ -450,7 +669,7 @@ class AgentService:
             return
 
         yield AgentEvent.section(
-            user_id, request_id, "Prompt", "Please reply **yes** or **no**."
+            user_id, request_id, "Prompt", "Please reply yes or no."
         )
         yield AgentEvent.complete(user_id, request_id)
 
@@ -523,6 +742,14 @@ class AgentService:
         )
 
         session.state = _State.IDLE
+        log_event(
+            _logger,
+            f"Code delivered: {language}",
+            user_id=user_id,
+            request_id=request_id,
+            agent="AgentService",
+            stage="code_generated",
+        )
         yield AgentEvent.section(
             user_id,
             request_id,

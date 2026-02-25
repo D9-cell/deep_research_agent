@@ -1,13 +1,15 @@
 {
   "version": "1.0",
   "profile": {
-    "solved_count": 2,
-    "preferred_language": "java , kotlin and rust",
+    "solved_count": 4,
+    "preferred_language": "java and python",
     "pattern_attempts": {
-      "BFS": 4
+      "BFS": 5,
+      "Dynamic Programming": 1
     },
     "pattern_successes": {
-      "BFS": 4
+      "BFS": 5,
+      "Dynamic Programming": 1
     },
     "recent_topics": [
       "** Depth-First Search",
@@ -15,7 +17,7 @@
       "Graph",
       "Union Find"
     ],
-    "last_session": "2026-02-20T12:01:13.722872+00:00"
+    "last_session": "2026-02-25T09:39:28.070936+00:00"
   },
   "solved_problems": [
     {
@@ -36,6 +38,26 @@
       "language": "java",
       "solved_at": "2026-02-20T11:21:50.211013+00:00",
       "pattern": "BFS",
+      "session_notes": ""
+    },
+    {
+      "name": "Leetcode 2360",
+      "slug": "leetcode-2360",
+      "difficulty": "Unknown",
+      "tags": [],
+      "language": "java and python",
+      "solved_at": "2026-02-25T09:16:13.883905+00:00",
+      "pattern": "BFS",
+      "session_notes": ""
+    },
+    {
+      "name": "Strange Printer",
+      "slug": "strange-printer",
+      "difficulty": "Unknown",
+      "tags": [],
+      "language": "java and python",
+      "solved_at": "2026-02-25T09:39:28.070914+00:00",
+      "pattern": "Dynamic Programming",
       "session_notes": ""
     }
   ]

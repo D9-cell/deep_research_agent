@@ -36,12 +36,12 @@ StageLabel = Literal[
 
 # Human-readable progress messages shown to users
 STAGE_MESSAGES: dict[str, str] = {
-    "fetch":     "Fetching problem…",
-    "similar":   "Finding similar problems…",
-    "patterns":  "Analyzing patterns…",
-    "solutions": "Mining solutions…",
-    "strategy":  "Optimizing strategy…",
-    "synthesis": "Synthesizing response…",
+    "fetch":     "Problem Acquisition started",
+    "similar":   "Similarity search running",
+    "patterns":  "Pattern classification complete",
+    "solutions": "Strategy ranking complete",
+    "strategy":  "Synthesizing solution strategy",
+    "synthesis": "Finalizing response",
 }
 
 

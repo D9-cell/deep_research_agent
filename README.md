@@ -186,7 +186,6 @@ cat algomentor.log | jq 'select(.duration_ms != null) | {stage, duration_ms}'
 | 2 | `agent/subagents.py` importable | 5 specialised subagents |
 | 3 | `memory/store.py` importable | Persistent memory, personalisation |
 
-Startup banner: `[Phase 1 ✅  |  Phase 2 ✅  |  Phase 3 ✅]`
 
 ---
 
